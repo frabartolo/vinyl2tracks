@@ -32,10 +32,12 @@ def get_audio_duration_seconds(path: str) -> float:
 
 def run_silencedetect(
     input_path: str,
-    noise_db: float = -35,
-    min_silence_duration: float = 2.0,
+    noise_db: float = -28,
+    min_silence_duration: float = 1.2,
 ) -> List[Tuple[float, float]]:
-    """Stille-Intervalle ermitteln. Returns [(start, end), ...] in Sekunden."""
+    """Stille-Intervalle ermitteln. Returns [(start, end), ...] in Sekunden.
+    Für Schallplatten-Rips: höherer noise_db (z.B. -28) und kürzeres min_silence (1–1.5 s)
+    helfen, Pausen trotz Rillenrauschen zu erkennen."""
     # silencedetect liefert Ausgabe auf stderr
     cmd = [
         "ffmpeg", "-nostdin", "-i", input_path,
@@ -48,8 +50,8 @@ def run_silencedetect(
     stderr = result.stderr or ""
     starts = [float(m.group(1)) for m in re.finditer(r"silence_start:\s*([\d.]+)", stderr)]
     ends = [float(m.group(1)) for m in re.finditer(r"silence_end:\s*([\d.]+)", stderr)]
+    # FFmpeg kann silence_end erst nach dem nächsten Audio ausgeben – Reihenfolge prüfen
     if len(starts) != len(ends):
-        # Fallback: nur starts nutzen, ends aus nächstem start
         if starts and not ends:
             duration = get_audio_duration_seconds(input_path)
             ends = starts[1:] + [duration]
@@ -57,7 +59,14 @@ def run_silencedetect(
             ends = ends[: len(starts)]
         else:
             starts = starts[: len(ends)]
-    return list(zip(starts, ends))
+    # Sicherstellen: jedes Ende >= zugehöriger Start
+    out = []
+    for s, e in zip(starts, ends):
+        if e > s:
+            out.append((s, e))
+        else:
+            out.append((s, s + min_silence_duration))
+    return out
 
 
 def silence_to_segments(
@@ -120,10 +129,10 @@ def main():
     parser.add_argument("input", help="Eingabe-Audiodatei (MP3/WAV/…)")
     parser.add_argument("-o", "--output-dir", default=None,
                         help="Ausgabeordner (Default: neben der Datei / <name>_tracks)")
-    parser.add_argument("--noise-db", type=float, default=-35,
-                        help="Stille-Schwellwert in dB (default: -35)")
-    parser.add_argument("--min-silence", type=float, default=2.0,
-                        help="Mindestdauer Stille in Sekunden (default: 2)")
+    parser.add_argument("--noise-db", type=float, default=-28,
+                        help="Stille-Schwellwert in dB; für Vinyl evtl. -25 (default: -28)")
+    parser.add_argument("--min-silence", type=float, default=1.2,
+                        help="Mindestdauer Stille in Sekunden (default: 1.2)")
     parser.add_argument("--min-track", type=float, default=10.0,
                         help="Mindestlänge eines Tracks in Sekunden (default: 10)")
     parser.add_argument("--padding", type=float, default=0.2,
@@ -131,6 +140,7 @@ def main():
     parser.add_argument("--format", choices=("mp3", "wav", "copy"), default="mp3",
                         help="Ausgabeformat (default: mp3)")
     parser.add_argument("--dry-run", action="store_true", help="Nur Segmente anzeigen, nicht schneiden")
+    parser.add_argument("-v", "--verbose", action="store_true", help="Erkannte Stille-Intervalle anzeigen")
     args = parser.parse_args()
 
     input_path = os.path.abspath(args.input)
@@ -146,6 +156,19 @@ def main():
 
     duration = get_audio_duration_seconds(input_path)
     silences = run_silencedetect(input_path, noise_db=args.noise_db, min_silence_duration=args.min_silence)
+
+    if args.verbose and silences:
+        print("Erkannte Stille-Intervalle:")
+        for i, (s, e) in enumerate(silences, 1):
+            print(f"  {i}: {s:.1f} s – {e:.1f} s ({e - s:.1f} s)")
+
+    if not silences:
+        print(
+            "Hinweis: Keine Stille erkannt – es wird nur ein Track ausgegeben. "
+            "Bei Schallplatten-Rips oft: --noise-db -25 oder -22, --min-silence 1",
+            file=sys.stderr,
+        )
+
     segments = silence_to_segments(
         silences, duration,
         min_track_length=args.min_track,

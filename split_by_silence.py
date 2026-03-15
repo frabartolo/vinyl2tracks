@@ -141,6 +141,8 @@ def main():
                         help="Ausgabeformat (default: mp3)")
     parser.add_argument("--dry-run", action="store_true", help="Nur Segmente anzeigen, nicht schneiden")
     parser.add_argument("-v", "--verbose", action="store_true", help="Erkannte Stille-Intervalle anzeigen")
+    parser.add_argument("--tracks", "-n", type=int, default=None, metavar="N",
+                        help="Erwartete Anzahl Tracks; es werden die (N-1) längsten Stille-Intervalle als Trennstellen genutzt (z.B. -n 10 für 10 Tracks pro Seite)")
     args = parser.parse_args()
 
     input_path = os.path.abspath(args.input)
@@ -169,9 +171,27 @@ def main():
             file=sys.stderr,
         )
 
+    # Bei --tracks N: nur die (N-1) längsten Stille-Intervalle nutzen (echte Pausen zwischen Tracks)
+    if args.tracks is not None and args.tracks > 1 and len(silences) >= args.tracks - 1:
+        n_splits = args.tracks - 1
+        by_duration = sorted(silences, key=lambda x: x[1] - x[0], reverse=True)
+        chosen = sorted(by_duration[:n_splits], key=lambda x: x[0])
+        if args.verbose:
+            print(f"Bei --tracks {args.tracks}: {n_splits} längste Stille-Intervalle als Trennstellen:")
+            for i, (s, e) in enumerate(chosen, 1):
+                print(f"  {i}: {s:.1f} s – {e:.1f} s ({e - s:.1f} s)")
+        silences = chosen
+    elif args.tracks is not None and silences and len(silences) < args.tracks - 1:
+        print(
+            f"Hinweis: --tracks {args.tracks} gewünscht, aber nur {len(silences)} Stille-Intervalle gefunden. "
+            "Alle werden genutzt.",
+            file=sys.stderr,
+        )
+
+    min_track = 0.5 if (args.tracks is not None and args.tracks > 1) else args.min_track
     segments = silence_to_segments(
         silences, duration,
-        min_track_length=args.min_track,
+        min_track_length=min_track,
         padding=args.padding,
     )
 

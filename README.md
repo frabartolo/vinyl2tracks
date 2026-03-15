@@ -30,11 +30,13 @@ python3 split_by_silence.py /pfad/zur/aufnahme_seite_a.mp3 -o ./ausgabe
 
 Parameter:
 
-- `--noise-db` – Stille-Schwelle (z.B. -35)
-- `--min-silence` – Mindestdauer Stille in Sekunden (z.B. 2)
-- `--min-track` – Kürzeste Track-Länge (Sekunden)
+- `--noise-db` – Stille-Schwelle (z.B. -28 für Vinyl)
+- `--min-silence` – Mindestdauer Stille in Sekunden (default 1.2)
+- `--min-track` – Kürzeste Track-Länge (Sekunden); bei `--tracks` ignoriert
+- `--tracks` / `-n` – **Erwartete Anzahl Tracks** (z.B. `-n 10`). Es werden die (N-1) **längsten** Stille-Intervalle als Trennstellen genutzt – sinnvoll, wenn mehr Stille erkannt wird als Pausen zwischen Tracks (z.B. 10 Tracks pro Seite).
 - `--format mp3|wav|copy` – Ausgabeformat
 - `--dry-run` – Nur Segmente anzeigen, nicht schneiden
+- `-v` – Erkannte Stille-Intervalle anzeigen
 
 ### Mit OCR (Cover/Label → Metadaten)
 

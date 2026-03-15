@@ -171,16 +171,39 @@ def main():
             file=sys.stderr,
         )
 
-    # Bei --tracks N: nur die (N-1) längsten Stille-Intervalle nutzen (echte Pausen zwischen Tracks)
-    if args.tracks is not None and args.tracks > 1 and len(silences) >= args.tracks - 1:
+    # Bei --tracks N: (N-1) Trennstellen gleichmäßig über die Länge wählen:
+    # Zeitachse in N-1 Regionen teilen, pro Region das längste Stille-Intervall nutzen.
+    # So entstehen keine Häufung am Run-out (Plattenende).
+    if args.tracks is not None and args.tracks > 1 and silences:
         n_splits = args.tracks - 1
-        by_duration = sorted(silences, key=lambda x: x[1] - x[0], reverse=True)
-        chosen = sorted(by_duration[:n_splits], key=lambda x: x[0])
+        region_duration = duration / (n_splits + 1e-9)
+        chosen = []
+        used = set()
+        for k in range(n_splits):
+            region_start = k * region_duration
+            region_end = (k + 1) * region_duration
+            mid = (region_start + region_end) / 2
+            # Stille, deren Mitte in dieser Region liegt, noch nicht verwendet
+            in_region = [
+                (s, e) for s, e in silences if (s, e) not in used
+                and region_start <= (s + e) / 2 <= region_end
+            ]
+            if in_region:
+                longest = max(in_region, key=lambda x: x[1] - x[0])
+                chosen.append(longest)
+                used.add(longest)
+            else:
+                # Fallback: nächste noch nicht verwendete Stille zur Regionsmitte
+                available = [(s, e) for s, e in silences if (s, e) not in used]
+                if available:
+                    nearest = min(available, key=lambda x: abs((x[0] + x[1]) / 2 - mid))
+                    chosen.append(nearest)
+                    used.add(nearest)
+        silences = sorted(chosen, key=lambda x: x[0])
         if args.verbose:
-            print(f"Bei --tracks {args.tracks}: {n_splits} längste Stille-Intervalle als Trennstellen:")
-            for i, (s, e) in enumerate(chosen, 1):
+            print(f"Bei --tracks {args.tracks}: {len(silences)} Trennstellen (je Region längste Stille):")
+            for i, (s, e) in enumerate(silences, 1):
                 print(f"  {i}: {s:.1f} s – {e:.1f} s ({e - s:.1f} s)")
-        silences = chosen
     elif args.tracks is not None and silences and len(silences) < args.tracks - 1:
         print(
             f"Hinweis: --tracks {args.tracks} gewünscht, aber nur {len(silences)} Stille-Intervalle gefunden. "
@@ -188,7 +211,7 @@ def main():
             file=sys.stderr,
         )
 
-    min_track = 0.5 if (args.tracks is not None and args.tracks > 1) else args.min_track
+    min_track = 0.0 if (args.tracks is not None and args.tracks > 1) else args.min_track
     segments = silence_to_segments(
         silences, duration,
         min_track_length=min_track,

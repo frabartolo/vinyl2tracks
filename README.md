@@ -33,7 +33,7 @@ Parameter:
 - `--noise-db` – Stille-Schwelle (z.B. -28 für Vinyl)
 - `--min-silence` – Mindestdauer Stille in Sekunden (default 1.2)
 - `--min-track` – Kürzeste Track-Länge (Sekunden); bei `--tracks` ignoriert
-- `--tracks` / `-n` – **Erwartete Anzahl Tracks** (z.B. `-n 10`). Es werden die (N-1) **längsten** Stille-Intervalle als Trennstellen genutzt – sinnvoll, wenn mehr Stille erkannt wird als Pausen zwischen Tracks (z.B. 10 Tracks pro Seite).
+- `--tracks` / `-n` – **Erwartete Anzahl Tracks** (z.B. `-n 10`). Die Zeitachse wird in N-1 Regionen geteilt; pro Region wird das längste Stille-Intervall als Trennstelle genutzt. So entstehen genau N Tracks ohne Häufung am Plattenende (Run-out).
 - `--format mp3|wav|copy` – Ausgabeformat
 - `--dry-run` – Nur Segmente anzeigen, nicht schneiden
 - `-v` – Erkannte Stille-Intervalle anzeigen

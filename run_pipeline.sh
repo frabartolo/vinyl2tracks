@@ -28,14 +28,32 @@ python3 "$SCRIPT_DIR/split_by_silence.py" "$INPUT" -o "$OUT_DIR" --format mp3
 echo ""
 
 if [ -n "$OCR_IMAGES" ]; then
-  echo "=== 2. OCR-Metadaten (Cover/Label) ==="
+  echo "=== 2. OCR-Metadaten (Cover/Label) + ggf. MusicBrainz ==="
   if [ -n "${OCR_CMD}" ] || [ -n "${VINYL_OCR_CMD}" ] || [ -n "${OCR_URL}" ]; then
-    python3 "$SCRIPT_DIR/ocr_metadata.py" $OCR_IMAGES --json > "$OUT_DIR/metadata.json" && \
-    python3 "$SCRIPT_DIR/rename_tracks.py" "$OUT_DIR" --meta "$OUT_DIR/metadata.json" --dry-run
-    if [ -f "$OUT_DIR/metadata.json" ] && [ -t 0 ]; then
-      read -r -p "Tracks wie oben umbenennen und taggen? [jN] " ans
-      if [ "$ans" = "j" ] || [ "$ans" = "J" ]; then
-        python3 "$SCRIPT_DIR/rename_tracks.py" "$OUT_DIR" --meta "$OUT_DIR/metadata.json"
+    python3 "$SCRIPT_DIR/ocr_metadata.py" $OCR_IMAGES --json > "$OUT_DIR/metadata_ocr.json" || true
+    if [ -f "$OUT_DIR/metadata_ocr.json" ]; then
+      # Wenn Katalognummer erkannt: Trackliste von MusicBrainz laden (öffentliche API)
+      CATALOG=$(python3 -c "import json,sys; d=json.load(open(sys.argv[1])); c=d.get('catalog_numbers',[]); print(c[0] if c else '')" "$OUT_DIR/metadata_ocr.json" 2>/dev/null)
+      if [ -n "$CATALOG" ] && [ "${VINYL_FETCH_MUSICBRAINZ:-1}" = "1" ]; then
+        echo "Katalognummer erkannt: $CATALOG – lade Trackliste von MusicBrainz …"
+        if python3 "$SCRIPT_DIR/fetch_tracks_by_catalog.py" "$CATALOG" --json > "$OUT_DIR/metadata_mb.json" 2>/dev/null; then
+          # MusicBrainz-JSON hat album, artist, tracks – für rename_tracks reicht das
+          cp "$OUT_DIR/metadata_mb.json" "$OUT_DIR/metadata.json"
+          echo "Trackliste von MusicBrainz übernommen."
+        else
+          cp "$OUT_DIR/metadata_ocr.json" "$OUT_DIR/metadata.json"
+        fi
+      else
+        cp "$OUT_DIR/metadata_ocr.json" "$OUT_DIR/metadata.json"
+      fi
+    fi
+    if [ -f "$OUT_DIR/metadata.json" ]; then
+      python3 "$SCRIPT_DIR/rename_tracks.py" "$OUT_DIR" --meta "$OUT_DIR/metadata.json" --dry-run
+      if [ -t 0 ]; then
+        read -r -p "Tracks wie oben umbenennen und taggen? [jN] " ans
+        if [ "$ans" = "j" ] || [ "$ans" = "J" ]; then
+          python3 "$SCRIPT_DIR/rename_tracks.py" "$OUT_DIR" --meta "$OUT_DIR/metadata.json"
+        fi
       fi
     fi
   else

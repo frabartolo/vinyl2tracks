@@ -24,6 +24,14 @@ TRACK_PATTERNS = [
     re.compile(r"^\s*(\d{1,2})\s+([^\d].+)$"),   # 01  Title
 ]
 
+# Katalognummern: MCA 63168, 63168, 16.21 229-00-1 / 16.21 229-00-2 (Seite)
+CATALOG_PATTERNS = [
+    re.compile(r"\bMCA\s*[:\s]*(\d{4,6})\b", re.IGNORECASE),
+    re.compile(r"\b(6\d{4})\b"),   # 5-stellig mit 6 am Anfang (typisch MCA)
+    re.compile(r"\b(\d{4,6})\b"),  # 4–6 Ziffern als Kandidat
+    re.compile(r"\b(\d{1,2}\.\d{1,2}\s+\d{2,4}[-\s]*\d{2,3}[-\s]*\d)\b"),  # 16.21 229-00-1
+]
+
 
 def get_ocr_command() -> Optional[str]:
     """OCR-Befehl aus Umgebung (z.B. Wrapper der per SSH OpenClaw aufruft)."""
@@ -79,6 +87,38 @@ def run_ocr_on_images(image_paths: List[str]) -> str:
     return "\n\n".join(t for t in texts if t)
 
 
+def parse_catalog_numbers(ocr_text: str) -> List[str]:
+    """Aus OCR-Text Katalognummern extrahieren (MCA, numerisch, 16.21 229-00-x).
+    Priorität: MCA-Nummer (6xxxx), dann andere 4–6 Ziffern, dann 16.21 … (Seiten-Nr.)."""
+    found: List[str] = []
+    seen = set()
+    # MCA explizit zuerst (z.B. 63168)
+    for m in CATALOG_PATTERNS[0].finditer(ocr_text):
+        num = m.group(1).strip()
+        if num not in seen:
+            seen.add(num)
+            found.append(num)
+    # 6xxxx (typisch MCA)
+    for m in CATALOG_PATTERNS[1].finditer(ocr_text):
+        num = m.group(1).strip()
+        if num not in seen:
+            seen.add(num)
+            found.append(num)
+    # 16.21 229-00-1 / -2
+    for m in CATALOG_PATTERNS[3].finditer(ocr_text):
+        num = re.sub(r"\s+", " ", m.group(1).strip())
+        if num not in seen:
+            seen.add(num)
+            found.append(num)
+    # Übrige 4–6 Ziffern (nur wenn noch nicht dabei)
+    for m in CATALOG_PATTERNS[2].finditer(ocr_text):
+        num = m.group(1).strip()
+        if num not in seen and len(num) >= 4:
+            seen.add(num)
+            found.append(num)
+    return found
+
+
 def parse_album_and_tracks(ocr_text: str) -> Dict[str, Any]:
     """Aus OCR-Text Albumtitel und Trackliste extrahieren (heuristisch)."""
     lines = [ln.strip() for ln in ocr_text.splitlines() if ln.strip()]
@@ -121,7 +161,12 @@ def parse_album_and_tracks(ocr_text: str) -> Dict[str, Any]:
 
     # Leere Slots entfernen, fortlaufend nummeriert
     tracks = [t for t in tracks if t]
-    return {"album": album_title or "Unbekannt", "tracks": tracks}
+    catalog_numbers = parse_catalog_numbers(ocr_text)
+    return {
+        "album": album_title or "Unbekannt",
+        "tracks": tracks,
+        "catalog_numbers": catalog_numbers,
+    }
 
 
 def apply_track_names_to_files(
@@ -173,6 +218,8 @@ def main():
     if args.json:
         print(json.dumps(meta, ensure_ascii=False, indent=2))
         return
+    if meta.get("catalog_numbers"):
+        print("Erkannte Katalognummern:", ", ".join(meta["catalog_numbers"]))
 
     print("Album:", meta["album"])
     print("Tracks:")

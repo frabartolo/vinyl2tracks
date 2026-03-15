@@ -7,9 +7,10 @@ Toolchain zum Aufteilen langer Audio-Aufnahmen (eine MP3/WAV pro Seite oder Plat
 ## Ablauf
 
 1. **Track-Split** – `split_by_silence.py`: Eine Datei → viele Tracks (Stille zwischen Titeln).
-2. **OCR (optional)** – `ocr_metadata.py`: Bilder von Cover/Label → Albumtitel + Trackliste (z.B. mit DeepSeek OCR auf OpenClaw).
-3. **Umbenennen & Taggen** – `rename_tracks.py`: Tracks nach OCR-Ergebnis benennen und ID3/Metadaten setzen.
-4. **Spleeter (optional)** – Pro Track Stems (vocals/accompaniment) erzeugen.
+2. **OCR (optional)** – `ocr_metadata.py`: Bilder von Cover/Label → Albumtitel + Trackliste + **Katalognummern** (z.B. MCA 63168, 16.21 229-00-1).
+3. **Trackliste von MusicBrainz (optional)** – Wird eine Katalognummer erkannt, lädt die Pipeline die offizielle Trackliste von der öffentlichen [MusicBrainz](https://musicbrainz.org)-API (kein API-Key nötig).
+4. **Umbenennen & Taggen** – `rename_tracks.py`: Tracks nach Metadaten benennen und ID3 setzen (inkl. Artist bei MusicBrainz-Daten).
+5. **Spleeter (optional)** – Pro Track Stems (vocals/accompaniment) erzeugen.
 
 ## Anforderungen
 
@@ -86,6 +87,7 @@ VINYL_USE_SPLEETER=1 ./run_pipeline.sh seite_a.mp3
 | `OCR_CMD` / `VINYL_OCR_CMD` | Befehl für OCR; erhält Bildpfad als 1. Argument, liefert Text auf stdout |
 | `OCR_URL` / `VINYL_OCR_URL` | URL für OCR-API; POST mit Bild-Body |
 | `VINYL_OCR_IMAGES` | Leerzeichen-getrennte Liste von Bildern für die Pipeline (Cover/Label) |
+| `VINYL_FETCH_MUSICBRAINZ` | `1` (default) = bei erkannten Katalognummern Trackliste von MusicBrainz laden; `0` = nur OCR nutzen |
 | `VINYL_USE_SPLEETER` | `1` = nach dem Split Spleeter 2stems pro Track ausführen |
 | `OPENCLAW_HOST` | Hostname für Beispiel-Wrapper (z.B. `openclaw`) |
 | `REMOTE_OCR_CMD` | OCR-Befehl auf OpenClaw im Beispiel-Wrapper |
@@ -102,12 +104,29 @@ spleeter separate -p spleeter:2stems -o output_dir eingabe.mp3
 
 In dieser Toolchain: `VINYL_USE_SPLEETER=1` in `run_pipeline.sh` erzeugt pro getrenntem Track einen Unterordner mit `vocals.wav` und `accompaniment.wav`.
 
+## Katalognummern und MusicBrainz
+
+Aus dem OCR-Text werden **Katalognummern** erkannt, z.B.:
+- **MCA 63168** (Louis Armstrong – 20 Golden Hits)
+- **16.21 229-00-1** / **16.21 229-00-2** (Seiten-Nummern auf dem Label)
+
+Ist eine Nummer vorhanden, kann die **Trackliste von MusicBrainz** geladen werden (öffentliche API, Rate-Limit 1 Anfrage/Sekunde):
+
+```bash
+# Direkt mit Katalognummer (ohne OCR)
+python3 fetch_tracks_by_catalog.py 63168 --json > metadata.json
+python3 rename_tracks.py ./ausgabe --meta metadata.json
+```
+
+In der Pipeline: Nach dem OCR wird automatisch die erste erkannte Katalognummer für den MusicBrainz-Abruf genutzt; die geladene Trackliste ersetzt dann die aus dem OCR. So erhältst du exakte Titel und Künstler.
+
 ## Dateien
 
 | Datei | Beschreibung |
 |-------|--------------|
 | `split_by_silence.py` | Track-Split per ffmpeg silencedetect |
-| `ocr_metadata.py` | OCR aufrufen, Album/Trackliste parsen, JSON oder Umbenennungsvorschlag |
+| `ocr_metadata.py` | OCR aufrufen, Album/Trackliste und Katalognummern parsen |
+| `fetch_tracks_by_catalog.py` | Trackliste zu einer Katalognummer von MusicBrainz laden |
 | `rename_tracks.py` | Tracks aus Ordner + metadata.json umbenennen und ID3 setzen |
-| `run_pipeline.sh` | Kombinierte Pipeline (Split → optional OCR → optional Spleeter) |
+| `run_pipeline.sh` | Kombinierte Pipeline (Split → OCR → ggf. MusicBrainz → Umbenennen → optional Spleeter) |
 | `ocr_openclaw.example.sh` | Beispiel-Wrapper für OCR auf OpenClaw (SSH + Remote-Befehl) |

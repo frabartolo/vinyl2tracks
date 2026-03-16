@@ -22,10 +22,13 @@ def rename_and_tag(
     album: str,
     tracks: list,
     artist: str = "",
+    year: str = "",
+    label: str = "",
+    catalog_number: str = "",
     dry_run: bool = False,
     write_tags: bool = True,
 ) -> None:
-    """Dateien 01.xxx, 02.xxx umbenennen in '01 Künstlername.mp3' und ID3/Metadata setzen."""
+    """Dateien 01.xxx, 02.xxx umbenennen und ID3 setzen (inkl. Jahr, Label, Katalognummer)."""
     files = sorted(
         [f for f in os.listdir(track_dir) if f.lower().endswith((".mp3", ".wav", ".flac"))],
         key=lambda x: (int(re.match(r"^(\d+)", x).group(1)) if re.match(r"^(\d+)", x) else 999, x),
@@ -58,8 +61,16 @@ def rename_and_tag(
                 "-c", "copy",
                 new_path + ".tagged",
             ]
+            extra = []
             if artist:
-                cmd = cmd[:5] + ["-metadata", f"artist={artist}"] + cmd[5:]
+                extra += ["-metadata", f"artist={artist}"]
+            if year:
+                extra += ["-metadata", f"date={year}"]
+            if label or catalog_number:
+                comment_parts = [p for p in (f"Label: {label}" if label else "", f"Catalog: {catalog_number}" if catalog_number else "") if p]
+                extra += ["-metadata", f"comment={'  '.join(comment_parts)}"]
+            if extra:
+                cmd = cmd[:5] + extra + cmd[5:]
             if subprocess.run(cmd, capture_output=True).returncode == 0:
                 os.replace(new_path + ".tagged", new_path)
 
@@ -74,20 +85,27 @@ def main():
     parser.add_argument("--no-tags", action="store_true", help="Nur umbenennen, keine ID3-Tags setzen")
     args = parser.parse_args()
 
-    artist = ""
+    artist = year = label = catalog_number = ""
     if args.meta:
         with open(args.meta, encoding="utf-8") as f:
             data = json.load(f)
         album = data.get("album", args.album or "Unbekannt")
         tracks = data.get("tracks", args.tracks or [])
         artist = data.get("artist", "")
+        year = str(data.get("year", "") or "")
+        label = data.get("label", "") or ""
+        catalog_number = data.get("catalog_number", "") or ""
     else:
         album = args.album or "Unbekannt"
         tracks = args.tracks or []
     if not tracks:
         print("Keine Trackliste (--meta oder --tracks).", file=sys.stderr)
         sys.exit(1)
-    rename_and_tag(args.dir, album, tracks, artist=artist, dry_run=args.dry_run, write_tags=not args.no_tags)
+    rename_and_tag(
+        args.dir, album, tracks,
+        artist=artist, year=year, label=label, catalog_number=catalog_number,
+        dry_run=args.dry_run, write_tags=not args.no_tags,
+    )
 
 
 if __name__ == "__main__":

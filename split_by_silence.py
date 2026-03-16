@@ -98,15 +98,17 @@ def split_audio(
     segments: List[Tuple[float, Optional[float]]],
     output_format: str = "mp3",
     copy_codec: bool = False,
+    track_offset: int = 0,
 ) -> List[str]:
-    """Segmente mit ffmpeg ausschneiden. Gibt Liste der erzeugten Dateien zurück."""
+    """Segmente mit ffmpeg ausschneiden. track_offset: Start-Nummer (z.B. 10 für Seite B → 11.mp3, 12.mp3, …)."""
     os.makedirs(output_dir, exist_ok=True)
     input_ext = Path(input_path).suffix.lstrip(".").lower()
     use_copy = output_format == "copy" or (copy_codec and input_ext in ("mp3", "wav", "flac"))
     out_files = []
     for i, (seg_start, seg_end) in enumerate(segments, start=1):
         ext = input_ext if output_format == "copy" else output_format
-        out_name = f"{i:02d}.{ext}"
+        num = track_offset + i
+        out_name = f"{num:02d}.{ext}"
         out_path = os.path.join(output_dir, out_name)
         cmd = ["ffmpeg", "-nostdin", "-y", "-hide_banner", "-loglevel", "error",
                "-ss", str(seg_start), "-i", input_path]
@@ -143,6 +145,8 @@ def main():
     parser.add_argument("-v", "--verbose", action="store_true", help="Erkannte Stille-Intervalle anzeigen")
     parser.add_argument("--tracks", "-n", type=int, default=None, metavar="N",
                         help="Erwartete Anzahl Tracks; es werden die (N-1) längsten Stille-Intervalle als Trennstellen genutzt (z.B. -n 10 für 10 Tracks pro Seite)")
+    parser.add_argument("--track-offset", type=int, default=0, metavar="N",
+                        help="Start-Nummer für Ausgabedateien (z.B. 10 → 11.mp3, 12.mp3, … für Seite B)")
     args = parser.parse_args()
 
     input_path = os.path.abspath(args.input)
@@ -224,7 +228,7 @@ def main():
         print(f"  Track {i:02d}: {a:.1f} s – {end_s:.1f} s ({end_s - a:.1f} s)")
     if args.dry_run:
         return
-    files = split_audio(input_path, output_dir, segments, output_format=args.format)
+    files = split_audio(input_path, output_dir, segments, output_format=args.format, track_offset=args.track_offset)
     print(f"Geschrieben: {output_dir}")
     for f in files:
         print(f"  {f}")

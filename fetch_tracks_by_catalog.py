@@ -46,8 +46,8 @@ def search_release_by_catalog(catalog_number: str, limit: int = 5) -> List[Dict[
 
 
 def get_release_with_tracks(release_id: str) -> Optional[Dict[str, Any]]:
-    """Einzelnen Release inkl. Medien/Tracks abrufen."""
-    url = f"{MB_LOOKUP}{release_id}?inc=recordings+artist-credits&fmt=json"
+    """Einzelnen Release inkl. Medien/Tracks und Label-Info abrufen."""
+    url = f"{MB_LOOKUP}{release_id}?inc=recordings+artist-credits+labels&fmt=json"
     time.sleep(1.05)  # Rate-Limit mind. 1/s
     data = _request(url)
     return data
@@ -107,12 +107,37 @@ def fetch_metadata_by_catalog(
             artist_name = ac
             break
     title = (release.get("title") or "").strip()
+    # Jahr aus Release-Datum (z.B. "1975" oder "1975-03")
+    date_str = (release.get("date") or "").strip()
+    year = date_str[:4] if len(date_str) >= 4 else ""
+    # Label + Katalognummer aus label-info
+    label_name = ""
+    catno_from_mb = ""
+    for li in release.get("label-info") or []:
+        if isinstance(li, dict):
+            lab = li.get("label") or {}
+            if isinstance(lab, dict) and lab.get("name"):
+                label_name = lab.get("name", "")
+            catno_from_mb = (li.get("catalog-number") or "").strip()
+            if label_name or catno_from_mb:
+                break
+    # Tracks pro Medium (Seite), z.B. [10, 10] bei 2 Seiten
+    media_list = release.get("media") or []
+    tracks_per_medium = []
+    for med in media_list:
+        tks = med.get("tracks") or med.get("track") or []
+        tracks_per_medium.append(len(tks))
+    if not tracks_per_medium and tracks:
+        tracks_per_medium = [len(tracks)]
     return {
         "album": title or "Unbekannt",
         "artist": artist_name or "",
         "tracks": tracks,
-        "catalog_number": catalog_number,
+        "year": year,
+        "label": label_name,
+        "catalog_number": catno_from_mb or catalog_number,
         "musicbrainz_release_id": release.get("id"),
+        "tracks_per_medium": tracks_per_medium,
     }
 
 
@@ -157,7 +182,11 @@ def main():
         print("Kein Release oder keine Tracks gefunden.", file=sys.stderr)
         sys.exit(1)
     if args.json:
-        out = {k: meta[k] for k in ("album", "artist", "tracks") if k in meta}
+        out = {
+            k: meta[k]
+            for k in ("album", "artist", "tracks", "year", "label", "catalog_number", "tracks_per_medium")
+            if k in meta
+        }
         print(json.dumps(out, ensure_ascii=False, indent=2))
         return
     print("Album:", meta.get("album", ""))

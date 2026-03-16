@@ -6,11 +6,10 @@ Toolchain zum Aufteilen langer Audio-Aufnahmen (eine MP3/WAV pro Seite oder Plat
 
 ## Ablauf
 
-1. **Track-Split** – `split_by_silence.py`: Eine Datei → viele Tracks (Stille zwischen Titeln).
-2. **OCR (optional)** – `ocr_metadata.py`: Bilder von Cover/Label → Albumtitel + Trackliste + **Katalognummern** (z.B. MCA 63168, 16.21 229-00-1).
-3. **Trackliste von MusicBrainz (optional)** – Wird eine Katalognummer erkannt, lädt die Pipeline die offizielle Trackliste von der öffentlichen [MusicBrainz](https://musicbrainz.org)-API (kein API-Key nötig).
-4. **Umbenennen & Taggen** – `rename_tracks.py`: Tracks nach Metadaten benennen und ID3 setzen (inkl. Artist bei MusicBrainz-Daten).
-5. **Spleeter (optional)** – Pro Track Stems (vocals/accompaniment) erzeugen.
+1. **Metadaten (zuerst bei 2 Seiten)** – OCR und/oder **MusicBrainz** (erster Versuch bei Katalognummer): Album, Künstler, Trackliste, Jahr, Label, Katalognummer, ggf. Tracks pro Seite.
+2. **Track-Split** – `split_by_silence.py`: Eine oder zwei Dateien (Seite A + B) → Tracks in **ein** Verzeichnis (01 … 20). Bei zwei Seiten: `--track-offset` für Seite B.
+3. **Umbenennen & Taggen** – `rename_tracks.py`: Alle Infos aus Metadaten in ID3 (Titel, Album, Künstler, Jahr, Label, Katalognummer).
+4. **Spleeter (optional)** – Pro Track Stems (vocals/accompaniment) erzeugen.
 
 ## Anforderungen
 
@@ -36,6 +35,7 @@ Parameter:
 - `--min-track` – Kürzeste Track-Länge (Sekunden); bei `--tracks` ignoriert
 - `--tracks` / `-n` – **Erwartete Anzahl Tracks** (z.B. `-n 10`). Die Zeitachse wird in N-1 Regionen geteilt; pro Region wird das längste Stille-Intervall als Trennstelle genutzt. So entstehen genau N Tracks ohne Häufung am Plattenende (Run-out).
 - `--format mp3|wav|copy` – Ausgabeformat
+- `--track-offset` – Start-Nummer für Dateinamen (z.B. 10 → 11.mp3, 12.mp3 … für Seite B)
 - `--dry-run` – Nur Segmente anzeigen, nicht schneiden
 - `-v` – Erkannte Stille-Intervalle anzeigen
 
@@ -70,15 +70,19 @@ python3 ocr_metadata.py cover.jpg --json > metadata.json
 ### Komplette Pipeline
 
 ```bash
-# Nur Split
-./run_pipeline.sh /pfad/zu/seite_a.mp3
+# Eine Seite
+./run_pipeline.sh /pfad/zu/seite_a.mp3 [ausgabe_ordner]
 
-# Mit OCR (Bilder im gleichen Ordner wie die MP3 oder absoluter Pfad)
-VINYL_OCR_IMAGES="cover.jpg label.jpg" OCR_CMD=/pfad/zu/ocr_wrapper.sh ./run_pipeline.sh seite_a.mp3 ./ausgabe
+# Beide Seiten → ein Verzeichnis (01 … 20). Metadaten zuerst (MusicBrainz als erster Versuch).
+VINYL_OCR_IMAGES="cover.jpg label.jpg" OCR_CMD=/pfad/zu/ocr_wrapper.sh ./run_pipeline.sh seite_a.mp3 seite_b.mp3 ./ausgabe
+# Oder nur Katalognummer (ohne OCR):
+VINYL_CATALOG=63168 ./run_pipeline.sh "Louis Armstrong/20 GOLDEN HITS/Seite_1.MP3" "Louis Armstrong/20 GOLDEN HITS/Seite_2.MP3" "./Louis Armstrong/20 GOLDEN HITS/Ausgabe"
 
-# Optional Spleeter (langsam, pro Track 2 Stems)
+# Optional Spleeter
 VINYL_USE_SPLEETER=1 ./run_pipeline.sh seite_a.mp3
 ```
+
+Die Pipeline lädt bei vorhandener Katalognummer (aus OCR oder `VINYL_CATALOG`) **zuerst** die Metadaten von MusicBrainz (Album, Künstler, alle Tracktitel, Jahr, Label, Katalognummer, ggf. Tracks pro Seite). Anschließend werden beide Seiten in ein gemeinsames Verzeichnis geschnitten und alle Infos in die MP3-Tags übernommen.
 
 ## Konfiguration (Umgebung)
 
@@ -87,7 +91,8 @@ VINYL_USE_SPLEETER=1 ./run_pipeline.sh seite_a.mp3
 | `OCR_CMD` / `VINYL_OCR_CMD` | Befehl für OCR; erhält Bildpfad als 1. Argument, liefert Text auf stdout |
 | `OCR_URL` / `VINYL_OCR_URL` | URL für OCR-API; POST mit Bild-Body |
 | `VINYL_OCR_IMAGES` | Leerzeichen-getrennte Liste von Bildern für die Pipeline (Cover/Label) |
-| `VINYL_FETCH_MUSICBRAINZ` | `1` (default) = bei erkannten Katalognummern Trackliste von MusicBrainz laden; `0` = nur OCR nutzen |
+| `VINYL_CATALOG` | Katalognummer (z.B. 63168), wenn ohne OCR; für 2-Seiten-Modus nötig, falls keine Bilder |
+| `VINYL_FETCH_MUSICBRAINZ` | `1` (default) = bei Katalognummer Metadaten von MusicBrainz laden (erster Versuch); `0` = nur OCR |
 | `VINYL_USE_SPLEETER` | `1` = nach dem Split Spleeter 2stems pro Track ausführen |
 | `OPENCLAW_HOST` | Hostname für Beispiel-Wrapper (z.B. `openclaw`) |
 | `REMOTE_OCR_CMD` | OCR-Befehl auf OpenClaw im Beispiel-Wrapper |

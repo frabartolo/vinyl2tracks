@@ -1,0 +1,18 @@
+# vinyl2tracks – Konfiguration (statische Parameter)
+# Kopiere nach vinyl2tracks.conf und passe an.
+# Reihenfolge: Kommandozeile überschreibt Config, Config überschreibt Umgebung.
+
+# OCR-Befehl (erhält Bildpfad als Argument, liefert erkannten Text auf stdout)
+# ocr_cmd = /pfad/zu/ocr_openclaw.sh
+
+# Katalognummer für MusicBrainz (z.B. MCA 63168)
+# catalog = 63168
+
+# Standard-Bilder für OCR (Leerzeichen-getrennt)
+# images = cover.jpg label.jpg
+
+# MusicBrainz-Abruf (1 = ja, 0 = nein)
+# musicbrainz = 1
+
+# Spleeter nach dem Split (1 = ja, 0 = nein)
+# spleeter = 0

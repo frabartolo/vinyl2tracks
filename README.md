@@ -88,13 +88,28 @@ Alle Parameter werden als **Kommandozeilen-Optionen** übergeben (Umgebungsvaria
 ./run_pipeline.sh --help
 ```
 
-**Optionen:** `-i, --images` (Bilder für OCR), `-c, --catalog` (Katalognummer), `--ocr-cmd` (OCR-Befehl), `--spleeter`, `--no-musicbrainz`, `-h, --help`.
+**Optionen:** `-i, --images`, `-c, --catalog`, `--ocr-cmd`, `--config DATEI`, `--spleeter`, `--no-musicbrainz`, `-h, --help`.
 
 Die Pipeline lädt bei angegebener Katalognummer (**-c**) **zuerst** die Metadaten von MusicBrainz. Anschließend werden beide Seiten in ein gemeinsames Verzeichnis geschnitten und alle Infos in die MP3-Tags übernommen.
 
 ## Konfiguration
 
-**Kommandozeile (empfohlen):** Siehe `./run_pipeline.sh --help`. Optionen: `-i/--images`, `-c/--catalog`, `--ocr-cmd`, `--spleeter`, `--no-musicbrainz`.
+**Reihenfolge:** Kommandozeile → Config-Datei → Umgebungsvariablen.
+
+**Config-Datei (statische Parameter):** Lege `vinyl2tracks.conf` im Projektverzeichnis oder unter `~/.config/vinyl2tracks.conf` an (oder gib sie mit `--config DATEI` an). Format: `key = value`, Zeilen mit `#` sind Kommentare.
+
+```ini
+# vinyl2tracks.conf
+ocr_cmd = /pfad/zu/ocr_openclaw.sh
+catalog = 63168
+images = cover.jpg label.jpg
+musicbrainz = 1
+spleeter = 0
+```
+
+Siehe `vinyl2tracks.conf.example`. Erlaubte Keys: `ocr_cmd`, `catalog`, `images`, `musicbrainz`, `spleeter`.
+
+**Kommandozeile:** Siehe `./run_pipeline.sh --help`.
 
 **Umgebungsvariablen (optionaler Fallback):**
 
@@ -144,4 +159,5 @@ In der Pipeline: Nach dem OCR wird automatisch die erste erkannte Katalognummer 
 | `fetch_tracks_by_catalog.py` | Trackliste zu einer Katalognummer von MusicBrainz laden |
 | `rename_tracks.py` | Tracks aus Ordner + metadata.json umbenennen und ID3 setzen |
 | `run_pipeline.sh` | Kombinierte Pipeline (Split → OCR → ggf. MusicBrainz → Umbenennen → optional Spleeter) |
+| `vinyl2tracks.conf.example` | Beispiel-Config für statische Parameter (ocr_cmd, catalog, …) |
 | `ocr_openclaw.example.sh` | Beispiel-Wrapper für OCR auf OpenClaw (SSH + Remote-Befehl) |

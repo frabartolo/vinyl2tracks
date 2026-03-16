@@ -8,16 +8,17 @@
 #   -i, --images DATEI [DATEI ...]   Bilder für OCR (Cover/Label)
 #   -c, --catalog NUMMER             Katalognummer (z.B. 63168) für MusicBrainz
 #   --ocr-cmd BEFEHL                 OCR-Befehl (erhält Bildpfad, liefert Text auf stdout)
-#   --spleeter                      Nach dem Split Spleeter 2stems ausführen
-#   --no-musicbrainz                MusicBrainz-Abruf weglassen (nur OCR)
-#   -h, --help                      Diese Hilfe anzeigen
+#   --config DATEI                   Config-Datei (Standard: ./vinyl2tracks.conf, ~/.config/vinyl2tracks.conf)
+#   --spleeter                       Nach dem Split Spleeter 2stems ausführen
+#   --no-musicbrainz                 MusicBrainz-Abruf weglassen (nur OCR)
+#   -h, --help                       Diese Hilfe anzeigen
 #
-# Umgebungsvariablen (optional, falls nicht per Option gesetzt): OCR_CMD, VINYL_OCR_CMD, OCR_URL
+# Config-Datei: key = value (ocr_cmd, catalog, images, musicbrainz, spleeter). Siehe vinyl2tracks.conf.example.
 
 set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-# Optionen parsen (Umgebungsvariablen als Fallback)
+# Defaults: zuerst Umgebung, dann werden Config und CLI angewendet
 DEFAULT_OCR_IMAGES="${VINYL_OCR_IMAGES:-}"
 DEFAULT_CATALOG="${VINYL_CATALOG:-}"
 OCR_IMAGES=""
@@ -25,6 +26,34 @@ VINYL_CATALOG=""
 USE_SPLEETER=0
 FETCH_MUSICBRAINZ=1
 OCR_CMD_ARG=""
+CONFIG_FILE=""
+CONFIG_ocr_cmd=""
+CONFIG_catalog=""
+CONFIG_images=""
+CONFIG_spleeter=""
+CONFIG_musicbrainz=""
+
+read_config_file() {
+  local f="$1"
+  [[ ! -r "$f" ]] && return
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%%#*}"
+    line="${line#"${line%%[![:space:]]*}"}"
+    line="${line%"${line##*[![:space:]]}"}"
+    [[ -z "$line" ]] && continue
+    if [[ "$line" =~ ^([a-zA-Z_][a-zA-Z0-9_]*)[[:space:]]*=[[:space:]]*(.*)$ ]]; then
+      local key="${BASH_REMATCH[1]}"
+      local val="${BASH_REMATCH[2]}"
+      case "$key" in
+        ocr_cmd)     CONFIG_ocr_cmd="$val" ;;
+        catalog)     CONFIG_catalog="$val" ;;
+        images)      CONFIG_images="$val" ;;
+        spleeter)    CONFIG_spleeter="$val" ;;
+        musicbrainz) CONFIG_musicbrainz="$val" ;;
+      esac
+    fi
+  done < "$f"
+}
 
 show_usage() {
   echo "Verwendung: $0 [OPTIONEN] <eingabe.mp3> [eingabe2.mp3] [ausgabe_ordner]"
@@ -32,14 +61,17 @@ show_usage() {
   echo "Optionen:"
   echo "  -i, --images DATEI [DATEI ...]   Bilder für OCR (Cover/Label)"
   echo "  -c, --catalog NUMMER             Katalognummer für MusicBrainz (z.B. 63168)"
-  echo "  --ocr-cmd BEFEHL                 OCR-Befehl (erhält Bildpfad, stdout = Text)"
+  echo "  --ocr-cmd BEFEHL                  OCR-Befehl (erhält Bildpfad, stdout = Text)"
+  echo "  --config DATEI                   Config-Datei (Standard: ./vinyl2tracks.conf, ~/.config/vinyl2tracks.conf)"
   echo "  --spleeter                       Nach dem Split Spleeter 2stems ausführen"
   echo "  --no-musicbrainz                 Kein MusicBrainz-Abruf (nur OCR)"
   echo "  -h, --help                       Diese Hilfe"
   echo ""
+  echo "Config-Datei: key = value, z.B. ocr_cmd = /pfad/ocr.sh  (siehe vinyl2tracks.conf.example)"
+  echo ""
   echo "Beispiele:"
   echo "  $0 -c 63168 seite_a.mp3 seite_b.mp3 ./ausgabe"
-  echo "  $0 -i cover.jpg label.jpg --ocr-cmd /pfad/ocr.sh seite_a.mp3 seite_b.mp3 ./ausgabe"
+  echo "  $0 --config ~/.config/vinyl2tracks.conf seite_a.mp3 seite_b.mp3 ./ausgabe"
 }
 
 while [[ $# -gt 0 ]]; do
@@ -48,19 +80,33 @@ while [[ $# -gt 0 ]]; do
       shift
       while [[ $# -gt 0 && $1 != -* ]]; do OCR_IMAGES="$OCR_IMAGES $1"; shift; done
       ;;
-    -c|--catalog) VINYL_CATALOG="$2"; shift 2 ;;
-    --ocr-cmd)   OCR_CMD_ARG="$2"; shift 2 ;;
-    --spleeter)  USE_SPLEETER=1; shift ;;
+    -c|--catalog)   VINYL_CATALOG="$2"; shift 2 ;;
+    --ocr-cmd)     OCR_CMD_ARG="$2"; shift 2 ;;
+    --config)      CONFIG_FILE="$2"; shift 2 ;;
+    --spleeter)    USE_SPLEETER=1; shift ;;
     --no-musicbrainz) FETCH_MUSICBRAINZ=0; shift ;;
-    -h|--help)   show_usage; exit 0 ;;
+    -h|--help)     show_usage; exit 0 ;;
     *) break ;;
   esac
 done
 OCR_IMAGES="${OCR_IMAGES# }"
 
-# Fallback auf Umgebungsvariablen, wenn nicht per Option gesetzt
+# Config-Datei lesen (explizit angegeben oder Standardorte)
+if [[ -n "$CONFIG_FILE" ]]; then
+  read_config_file "$CONFIG_FILE"
+else
+  [[ -r "$SCRIPT_DIR/vinyl2tracks.conf" ]] && read_config_file "$SCRIPT_DIR/vinyl2tracks.conf"
+  [[ -r "${XDG_CONFIG_HOME:-$HOME/.config}/vinyl2tracks.conf" ]] && read_config_file "${XDG_CONFIG_HOME:-$HOME/.config}/vinyl2tracks.conf"
+fi
+
+# Fallback: zuerst Config, dann Umgebung
+[[ -z "$OCR_IMAGES" && -n "$CONFIG_images" ]] && OCR_IMAGES="$CONFIG_images"
 [[ -z "$OCR_IMAGES" && -n "$DEFAULT_OCR_IMAGES" ]] && OCR_IMAGES="$DEFAULT_OCR_IMAGES"
+[[ -z "$VINYL_CATALOG" && -n "$CONFIG_catalog" ]] && VINYL_CATALOG="$CONFIG_catalog"
 [[ -z "$VINYL_CATALOG" && -n "$DEFAULT_CATALOG" ]] && VINYL_CATALOG="$DEFAULT_CATALOG"
+[[ -z "$OCR_CMD_ARG" && -n "$CONFIG_ocr_cmd" ]] && OCR_CMD_ARG="$CONFIG_ocr_cmd"
+[[ "$USE_SPLEETER" -eq 0 && "$CONFIG_spleeter" = "1" ]] && USE_SPLEETER=1
+[[ "$FETCH_MUSICBRAINZ" -eq 1 && "$CONFIG_musicbrainz" = "0" ]] && FETCH_MUSICBRAINZ=0
 [[ -n "$OCR_CMD_ARG" ]] && export OCR_CMD="$OCR_CMD_ARG"
 
 # Positionale Argumente: Eingabe1 [Eingabe2] [Ausgabe]

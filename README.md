@@ -81,6 +81,9 @@ Alle Parameter werden als **Kommandozeilen-Optionen** übergeben (Umgebungsvaria
 # Oder: Katalognummer in vinyl2tracks.txt im Aufnahme-Ordner ablegen, dann ohne -c:
 ./run_pipeline.sh seite_a.mp3 seite_b.mp3 ./ausgabe
 
+# Ohne Nachfrage (z.B. für Skripte): Umbenennen/Taggen direkt ausführen
+./run_pipeline.sh -y -c 63168 seite_a.mp3 seite_b.mp3 ./ausgabe
+
 # Mit OCR-Bildern (Cover/Label) und optional OCR-Befehl
 ./run_pipeline.sh -i cover.jpg label.jpg --ocr-cmd /pfad/zu/ocr.sh seite_a.mp3 seite_b.mp3 ./ausgabe
 
@@ -91,7 +94,7 @@ Alle Parameter werden als **Kommandozeilen-Optionen** übergeben (Umgebungsvaria
 ./run_pipeline.sh --help
 ```
 
-**Optionen:** `-i, --images`, `-c, --catalog`, `--ocr-cmd`, `--config DATEI`, `--spleeter`, `--no-musicbrainz`, `-h, --help`.
+**Optionen:** `-i, --images`, `-c, --catalog`, `--ocr-cmd`, `--config DATEI`, `--spleeter`, `--no-musicbrainz`, `-y, --yes` (Umbenennen ohne Nachfrage), `-h, --help`.
 
 Die Pipeline lädt bei angegebener Katalognummer (**-c**) **zuerst** die Metadaten von MusicBrainz. Anschließend werden beide Seiten in ein gemeinsames Verzeichnis geschnitten und alle Infos in die MP3-Tags übernommen.
 
@@ -119,7 +122,7 @@ musicbrainz = 1
 spleeter = 0
 ```
 
-Siehe `vinyl2tracks.conf.example`. Erlaubte Keys: `ocr_cmd`, `catalog`, `images`, `musicbrainz`, `spleeter`.
+Siehe `vinyl2tracks.conf.example`. Erlaubte Keys: `ocr_cmd`, `catalog`, `images`, `musicbrainz`, `spleeter`, `rename_confirm` (0 = Umbenennen ohne Nachfrage).
 
 **Kommandozeile:** Siehe `./run_pipeline.sh --help`.
 

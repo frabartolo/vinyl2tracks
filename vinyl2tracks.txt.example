@@ -3,3 +3,4 @@
 # Überschreibt globale Config, wird von Kommandozeilen-Optionen überschrieben.
 
 catalog = 63168
+# rename_confirm = 0

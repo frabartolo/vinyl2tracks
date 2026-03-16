@@ -11,6 +11,7 @@
 #   --config DATEI                   Config-Datei (Standard: ./vinyl2tracks.conf, ~/.config/vinyl2tracks.conf)
 #   --spleeter                       Nach dem Split Spleeter 2stems ausführen
 #   --no-musicbrainz                 MusicBrainz-Abruf weglassen (nur OCR)
+#   -y, --yes                        Umbenennen/Taggen ohne Nachfrage ausführen
 #   -h, --help                       Diese Hilfe anzeigen
 #
 # Config-Datei: key = value. Im Verzeichnis der Aufnahme: vinyl2tracks.txt (z.B. catalog = 63168).
@@ -25,6 +26,7 @@ OCR_IMAGES=""
 VINYL_CATALOG=""
 USE_SPLEETER=0
 FETCH_MUSICBRAINZ=1
+CONFIRM_RENAME=1
 OCR_CMD_ARG=""
 CONFIG_FILE=""
 CONFIG_ocr_cmd=""
@@ -32,11 +34,13 @@ CONFIG_catalog=""
 CONFIG_images=""
 CONFIG_spleeter=""
 CONFIG_musicbrainz=""
+CONFIG_rename_confirm=""
 LOCAL_ocr_cmd=""
 LOCAL_catalog=""
 LOCAL_images=""
 LOCAL_spleeter=""
 LOCAL_musicbrainz=""
+LOCAL_rename_confirm=""
 
 # Liest key=value in CONFIG_* (prefix=CONFIG) oder LOCAL_* (prefix=LOCAL)
 read_config_into() {
@@ -48,11 +52,12 @@ read_config_into() {
     if [[ "$line" =~ ^([a-zA-Z_][a-zA-Z0-9_]*)[[:space:]]*=[[:space:]]*(.*)$ ]]; then
       local key="${BASH_REMATCH[1]}" val="${BASH_REMATCH[2]}"
       case "$key" in
-        ocr_cmd)     eval "${prefix}_ocr_cmd=\"\$val\"" ;;
-        catalog)     eval "${prefix}_catalog=\"\$val\"" ;;
-        images)      eval "${prefix}_images=\"\$val\"" ;;
-        spleeter)    eval "${prefix}_spleeter=\"\$val\"" ;;
-        musicbrainz) eval "${prefix}_musicbrainz=\"\$val\"" ;;
+        ocr_cmd)         eval "${prefix}_ocr_cmd=\"\$val\"" ;;
+        catalog)         eval "${prefix}_catalog=\"\$val\"" ;;
+        images)          eval "${prefix}_images=\"\$val\"" ;;
+        spleeter)        eval "${prefix}_spleeter=\"\$val\"" ;;
+        musicbrainz)     eval "${prefix}_musicbrainz=\"\$val\"" ;;
+        rename_confirm)  eval "${prefix}_rename_confirm=\"\$val\"" ;;
       esac
     fi
   done < "$f"
@@ -71,6 +76,7 @@ show_usage() {
   echo "  Lokale Optionen: vinyl2tracks.txt im Ordner der Eingabedatei(n) (z.B. catalog = 63168)"
   echo "  --spleeter                       Nach dem Split Spleeter 2stems ausführen"
   echo "  --no-musicbrainz                 Kein MusicBrainz-Abruf (nur OCR)"
+  echo "  -y, --yes                        Umbenennen/Taggen ohne Nachfrage"
   echo "  -h, --help                       Diese Hilfe"
   echo ""
   echo "Config-Datei: key = value, z.B. ocr_cmd = /pfad/ocr.sh  (siehe vinyl2tracks.conf.example)"
@@ -91,7 +97,8 @@ while [[ $# -gt 0 ]]; do
     --config)      CONFIG_FILE="$2"; shift 2 ;;
     --spleeter)    USE_SPLEETER=1; shift ;;
     --no-musicbrainz) FETCH_MUSICBRAINZ=0; shift ;;
-    -h|--help)     show_usage; exit 0 ;;
+    -y|--yes)       CONFIRM_RENAME=0; shift ;;
+    -h|--help)      show_usage; exit 0 ;;
     *) break ;;
   esac
 done
@@ -143,6 +150,8 @@ INPUT_DIR="$(dirname "$INPUT1")"
 [[ "$USE_SPLEETER" -eq 0 && "$CONFIG_spleeter" = "1" ]] && USE_SPLEETER=1
 [[ "$FETCH_MUSICBRAINZ" -eq 1 && "$LOCAL_musicbrainz" = "0" ]] && FETCH_MUSICBRAINZ=0
 [[ "$FETCH_MUSICBRAINZ" -eq 1 && "$CONFIG_musicbrainz" = "0" ]] && FETCH_MUSICBRAINZ=0
+[[ "$CONFIRM_RENAME" -eq 1 && "$LOCAL_rename_confirm" = "0" ]] && CONFIRM_RENAME=0
+[[ "$CONFIRM_RENAME" -eq 1 && "$CONFIG_rename_confirm" = "0" ]] && CONFIRM_RENAME=0
 [[ -n "$OCR_CMD_ARG" ]] && export OCR_CMD="$OCR_CMD_ARG"
 
 # === Schritt 0: Metadaten zuerst (bei 2 Seiten nötig; bei 1 Seite optional, aber MusicBrainz als erster Versuch)
@@ -220,7 +229,9 @@ fi
 if [ -f "$OUT_DIR/metadata.json" ]; then
   echo "=== 2. Umbenennen & Taggen ==="
   python3 "$SCRIPT_DIR/rename_tracks.py" "$OUT_DIR" --meta "$OUT_DIR/metadata.json" --dry-run
-  if [ -t 0 ]; then
+  if [ "$CONFIRM_RENAME" = "0" ]; then
+    python3 "$SCRIPT_DIR/rename_tracks.py" "$OUT_DIR" --meta "$OUT_DIR/metadata.json"
+  elif [ -t 0 ]; then
     read -r -p "Tracks wie oben umbenennen und taggen? [jN] " ans
     if [ "$ans" = "j" ] || [ "$ans" = "J" ]; then
       python3 "$SCRIPT_DIR/rename_tracks.py" "$OUT_DIR" --meta "$OUT_DIR/metadata.json"

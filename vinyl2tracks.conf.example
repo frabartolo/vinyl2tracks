@@ -16,3 +16,6 @@
 
 # Spleeter nach dem Split (1 = ja, 0 = nein)
 # spleeter = 0
+
+# Umbenennen/Taggen ohne Nachfrage (0 = ja, 1 = vorher fragen)
+# rename_confirm = 0

@@ -13,7 +13,7 @@
 #   --no-musicbrainz                 MusicBrainz-Abruf weglassen (nur OCR)
 #   -h, --help                       Diese Hilfe anzeigen
 #
-# Config-Datei: key = value (ocr_cmd, catalog, images, musicbrainz, spleeter). Siehe vinyl2tracks.conf.example.
+# Config-Datei: key = value. Im Verzeichnis der Aufnahme: vinyl2tracks.txt (z.B. catalog = 63168).
 
 set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -32,28 +32,33 @@ CONFIG_catalog=""
 CONFIG_images=""
 CONFIG_spleeter=""
 CONFIG_musicbrainz=""
+LOCAL_ocr_cmd=""
+LOCAL_catalog=""
+LOCAL_images=""
+LOCAL_spleeter=""
+LOCAL_musicbrainz=""
 
-read_config_file() {
-  local f="$1"
+# Liest key=value in CONFIG_* (prefix=CONFIG) oder LOCAL_* (prefix=LOCAL)
+read_config_into() {
+  local f="$1" prefix="$2"
   [[ ! -r "$f" ]] && return
   while IFS= read -r line || [[ -n "$line" ]]; do
-    line="${line%%#*}"
-    line="${line#"${line%%[![:space:]]*}"}"
-    line="${line%"${line##*[![:space:]]}"}"
+    line="${line%%#*}"; line="${line#"${line%%[![:space:]]*}"}"; line="${line%"${line##*[![:space:]]}"}"
     [[ -z "$line" ]] && continue
     if [[ "$line" =~ ^([a-zA-Z_][a-zA-Z0-9_]*)[[:space:]]*=[[:space:]]*(.*)$ ]]; then
-      local key="${BASH_REMATCH[1]}"
-      local val="${BASH_REMATCH[2]}"
+      local key="${BASH_REMATCH[1]}" val="${BASH_REMATCH[2]}"
       case "$key" in
-        ocr_cmd)     CONFIG_ocr_cmd="$val" ;;
-        catalog)     CONFIG_catalog="$val" ;;
-        images)      CONFIG_images="$val" ;;
-        spleeter)    CONFIG_spleeter="$val" ;;
-        musicbrainz) CONFIG_musicbrainz="$val" ;;
+        ocr_cmd)     eval "${prefix}_ocr_cmd=\"\$val\"" ;;
+        catalog)     eval "${prefix}_catalog=\"\$val\"" ;;
+        images)      eval "${prefix}_images=\"\$val\"" ;;
+        spleeter)    eval "${prefix}_spleeter=\"\$val\"" ;;
+        musicbrainz) eval "${prefix}_musicbrainz=\"\$val\"" ;;
       esac
     fi
   done < "$f"
 }
+
+read_config_file() { read_config_into "$1" "CONFIG"; }
 
 show_usage() {
   echo "Verwendung: $0 [OPTIONEN] <eingabe.mp3> [eingabe2.mp3] [ausgabe_ordner]"
@@ -63,6 +68,7 @@ show_usage() {
   echo "  -c, --catalog NUMMER             Katalognummer für MusicBrainz (z.B. 63168)"
   echo "  --ocr-cmd BEFEHL                  OCR-Befehl (erhält Bildpfad, stdout = Text)"
   echo "  --config DATEI                   Config-Datei (Standard: ./vinyl2tracks.conf, ~/.config/vinyl2tracks.conf)"
+  echo "  Lokale Optionen: vinyl2tracks.txt im Ordner der Eingabedatei(n) (z.B. catalog = 63168)"
   echo "  --spleeter                       Nach dem Split Spleeter 2stems ausführen"
   echo "  --no-musicbrainz                 Kein MusicBrainz-Abruf (nur OCR)"
   echo "  -h, --help                       Diese Hilfe"
@@ -99,16 +105,6 @@ else
   [[ -r "${XDG_CONFIG_HOME:-$HOME/.config}/vinyl2tracks.conf" ]] && read_config_file "${XDG_CONFIG_HOME:-$HOME/.config}/vinyl2tracks.conf"
 fi
 
-# Fallback: zuerst Config, dann Umgebung
-[[ -z "$OCR_IMAGES" && -n "$CONFIG_images" ]] && OCR_IMAGES="$CONFIG_images"
-[[ -z "$OCR_IMAGES" && -n "$DEFAULT_OCR_IMAGES" ]] && OCR_IMAGES="$DEFAULT_OCR_IMAGES"
-[[ -z "$VINYL_CATALOG" && -n "$CONFIG_catalog" ]] && VINYL_CATALOG="$CONFIG_catalog"
-[[ -z "$VINYL_CATALOG" && -n "$DEFAULT_CATALOG" ]] && VINYL_CATALOG="$DEFAULT_CATALOG"
-[[ -z "$OCR_CMD_ARG" && -n "$CONFIG_ocr_cmd" ]] && OCR_CMD_ARG="$CONFIG_ocr_cmd"
-[[ "$USE_SPLEETER" -eq 0 && "$CONFIG_spleeter" = "1" ]] && USE_SPLEETER=1
-[[ "$FETCH_MUSICBRAINZ" -eq 1 && "$CONFIG_musicbrainz" = "0" ]] && FETCH_MUSICBRAINZ=0
-[[ -n "$OCR_CMD_ARG" ]] && export OCR_CMD="$OCR_CMD_ARG"
-
 # Positionale Argumente: Eingabe1 [Eingabe2] [Ausgabe]
 [[ $# -eq 0 ]] && echo "Fehler: Mindestens eine Eingabedatei angeben." >&2 && show_usage >&2 && exit 1
 INPUT1="$1"
@@ -129,6 +125,25 @@ if [[ -z "$OUT_DIR" ]]; then
   [[ -n "$INPUT2" ]] && OUT_DIR="$(dirname "$INPUT1")/album_tracks"
 fi
 mkdir -p "$OUT_DIR"
+
+# Lokale Datei im Verzeichnis der Aufnahme (z.B. Katalognummer für diese Platte)
+INPUT_DIR="$(dirname "$INPUT1")"
+[[ -r "$INPUT_DIR/vinyl2tracks.txt" ]] && read_config_into "$INPUT_DIR/vinyl2tracks.txt" "LOCAL"
+
+# Fallback: Lokale Datei (Aufnahme-Ordner) → Config → Umgebung
+[[ -z "$OCR_IMAGES" && -n "$LOCAL_images" ]] && OCR_IMAGES="$LOCAL_images"
+[[ -z "$OCR_IMAGES" && -n "$CONFIG_images" ]] && OCR_IMAGES="$CONFIG_images"
+[[ -z "$OCR_IMAGES" && -n "$DEFAULT_OCR_IMAGES" ]] && OCR_IMAGES="$DEFAULT_OCR_IMAGES"
+[[ -z "$VINYL_CATALOG" && -n "$LOCAL_catalog" ]] && VINYL_CATALOG="$LOCAL_catalog"
+[[ -z "$VINYL_CATALOG" && -n "$CONFIG_catalog" ]] && VINYL_CATALOG="$CONFIG_catalog"
+[[ -z "$VINYL_CATALOG" && -n "$DEFAULT_CATALOG" ]] && VINYL_CATALOG="$DEFAULT_CATALOG"
+[[ -z "$OCR_CMD_ARG" && -n "$LOCAL_ocr_cmd" ]] && OCR_CMD_ARG="$LOCAL_ocr_cmd"
+[[ -z "$OCR_CMD_ARG" && -n "$CONFIG_ocr_cmd" ]] && OCR_CMD_ARG="$CONFIG_ocr_cmd"
+[[ "$USE_SPLEETER" -eq 0 && "$LOCAL_spleeter" = "1" ]] && USE_SPLEETER=1
+[[ "$USE_SPLEETER" -eq 0 && "$CONFIG_spleeter" = "1" ]] && USE_SPLEETER=1
+[[ "$FETCH_MUSICBRAINZ" -eq 1 && "$LOCAL_musicbrainz" = "0" ]] && FETCH_MUSICBRAINZ=0
+[[ "$FETCH_MUSICBRAINZ" -eq 1 && "$CONFIG_musicbrainz" = "0" ]] && FETCH_MUSICBRAINZ=0
+[[ -n "$OCR_CMD_ARG" ]] && export OCR_CMD="$OCR_CMD_ARG"
 
 # === Schritt 0: Metadaten zuerst (bei 2 Seiten nötig; bei 1 Seite optional, aber MusicBrainz als erster Versuch)
 # So wissen wir die Gesamt-Trackliste und ggf. tracks_per_medium (Seiten)

@@ -78,6 +78,9 @@ Alle Parameter werden als **Kommandozeilen-Optionen** übergeben (Umgebungsvaria
 # Beide Seiten → ein Verzeichnis, mit Katalognummer (MusicBrainz als erster Versuch)
 ./run_pipeline.sh -c 63168 seite_a.mp3 seite_b.mp3 ./ausgabe
 
+# Oder: Katalognummer in vinyl2tracks.txt im Aufnahme-Ordner ablegen, dann ohne -c:
+./run_pipeline.sh seite_a.mp3 seite_b.mp3 ./ausgabe
+
 # Mit OCR-Bildern (Cover/Label) und optional OCR-Befehl
 ./run_pipeline.sh -i cover.jpg label.jpg --ocr-cmd /pfad/zu/ocr.sh seite_a.mp3 seite_b.mp3 ./ausgabe
 
@@ -94,7 +97,16 @@ Die Pipeline lädt bei angegebener Katalognummer (**-c**) **zuerst** die Metadat
 
 ## Konfiguration
 
-**Reihenfolge:** Kommandozeile → Config-Datei → Umgebungsvariablen.
+**Reihenfolge:** Kommandozeile → **lokale Datei** (im Aufnahme-Ordner) → Config-Datei → Umgebungsvariablen.
+
+**Lokale Datei im Aufnahme-Verzeichnis:** Lege im **selben Ordner** wie deine Aufnahmen (z. B. neben `seite_a.mp3` / `seite_b.mp3`) eine Datei **`vinyl2tracks.txt`** an. Darin z. B. die Katalognummer für genau diese Platte:
+
+```ini
+# vinyl2tracks.txt (im Ordner der Schallplatten-Aufnahme)
+catalog = 63168
+```
+
+Erlaubte Keys wie in der Config-Datei: `catalog`, `images`, `ocr_cmd`, `musicbrainz`, `spleeter`. So brauchst du `-c 63168` nicht jedes Mal anzugeben, wenn du aus diesem Ordner startest.
 
 **Config-Datei (statische Parameter):** Lege `vinyl2tracks.conf` im Projektverzeichnis oder unter `~/.config/vinyl2tracks.conf` an (oder gib sie mit `--config DATEI` an). Format: `key = value`, Zeilen mit `#` sind Kommentare.
 
@@ -160,4 +172,5 @@ In der Pipeline: Nach dem OCR wird automatisch die erste erkannte Katalognummer 
 | `rename_tracks.py` | Tracks aus Ordner + metadata.json umbenennen und ID3 setzen |
 | `run_pipeline.sh` | Kombinierte Pipeline (Split → OCR → ggf. MusicBrainz → Umbenennen → optional Spleeter) |
 | `vinyl2tracks.conf.example` | Beispiel-Config für statische Parameter (ocr_cmd, catalog, …) |
+| `vinyl2tracks.txt.example` | Beispiel für lokale Datei im Aufnahme-Ordner (z. B. nur `catalog = 63168`) |
 | `ocr_openclaw.example.sh` | Beispiel-Wrapper für OCR auf OpenClaw (SSH + Remote-Befehl) |

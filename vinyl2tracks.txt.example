@@ -1,0 +1,5 @@
+# Optionen für diese Aufnahme (Verzeichnis der Schallplatte)
+# Datei: vinyl2tracks.txt im selben Ordner wie seite_a.mp3 / seite_b.mp3
+# Überschreibt globale Config, wird von Kommandozeilen-Optionen überschrieben.
+
+catalog = 63168

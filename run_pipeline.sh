@@ -2,43 +2,97 @@
 # Pipeline: Schallplatten-Rip → Tracks aufteilen (eine oder beide Seiten) → Metadaten (OCR + MusicBrainz) → Umbenennen/Taggen
 #
 # Verwendung:
-#   Eine Seite:  ./run_pipeline.sh <eingabe.mp3> [ausgabe_ordner]
-#   Beide Seiten in ein Verzeichnis:
-#     ./run_pipeline.sh <seite_a.mp3> <seite_b.mp3> [ausgabe_ordner]
-#     (Metadaten zuerst: OCR und/oder VINYL_CATALOG für MusicBrainz nötig, damit Trackanzahl pro Seite bekannt ist)
-#   Mit OCR/Bildern:  VINYL_OCR_IMAGES="cover.jpg label.jpg" OCR_CMD=... ./run_pipeline.sh ...
-#   Nur Katalognummer (ohne OCR):  VINYL_CATALOG=63168 ./run_pipeline.sh seite_a.mp3 seite_b.mp3 ./ausgabe
+#   ./run_pipeline.sh [OPTIONEN] <eingabe.mp3> [eingabe2.mp3] [ausgabe_ordner]
+#
+# Optionen:
+#   -i, --images DATEI [DATEI ...]   Bilder für OCR (Cover/Label)
+#   -c, --catalog NUMMER             Katalognummer (z.B. 63168) für MusicBrainz
+#   --ocr-cmd BEFEHL                 OCR-Befehl (erhält Bildpfad, liefert Text auf stdout)
+#   --spleeter                      Nach dem Split Spleeter 2stems ausführen
+#   --no-musicbrainz                MusicBrainz-Abruf weglassen (nur OCR)
+#   -h, --help                      Diese Hilfe anzeigen
+#
+# Umgebungsvariablen (optional, falls nicht per Option gesetzt): OCR_CMD, VINYL_OCR_CMD, OCR_URL
 
 set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-INPUT1="${1:?Usage: $0 <eingabe.mp3> [eingabe2.mp3] [ausgabe_ordner]}"
+
+# Optionen parsen (Umgebungsvariablen als Fallback)
+DEFAULT_OCR_IMAGES="${VINYL_OCR_IMAGES:-}"
+DEFAULT_CATALOG="${VINYL_CATALOG:-}"
+OCR_IMAGES=""
+VINYL_CATALOG=""
+USE_SPLEETER=0
+FETCH_MUSICBRAINZ=1
+OCR_CMD_ARG=""
+
+show_usage() {
+  echo "Verwendung: $0 [OPTIONEN] <eingabe.mp3> [eingabe2.mp3] [ausgabe_ordner]"
+  echo ""
+  echo "Optionen:"
+  echo "  -i, --images DATEI [DATEI ...]   Bilder für OCR (Cover/Label)"
+  echo "  -c, --catalog NUMMER             Katalognummer für MusicBrainz (z.B. 63168)"
+  echo "  --ocr-cmd BEFEHL                 OCR-Befehl (erhält Bildpfad, stdout = Text)"
+  echo "  --spleeter                       Nach dem Split Spleeter 2stems ausführen"
+  echo "  --no-musicbrainz                 Kein MusicBrainz-Abruf (nur OCR)"
+  echo "  -h, --help                       Diese Hilfe"
+  echo ""
+  echo "Beispiele:"
+  echo "  $0 -c 63168 seite_a.mp3 seite_b.mp3 ./ausgabe"
+  echo "  $0 -i cover.jpg label.jpg --ocr-cmd /pfad/ocr.sh seite_a.mp3 seite_b.mp3 ./ausgabe"
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -i|--images)
+      shift
+      while [[ $# -gt 0 && $1 != -* ]]; do OCR_IMAGES="$OCR_IMAGES $1"; shift; done
+      ;;
+    -c|--catalog) VINYL_CATALOG="$2"; shift 2 ;;
+    --ocr-cmd)   OCR_CMD_ARG="$2"; shift 2 ;;
+    --spleeter)  USE_SPLEETER=1; shift ;;
+    --no-musicbrainz) FETCH_MUSICBRAINZ=0; shift ;;
+    -h|--help)   show_usage; exit 0 ;;
+    *) break ;;
+  esac
+done
+OCR_IMAGES="${OCR_IMAGES# }"
+
+# Fallback auf Umgebungsvariablen, wenn nicht per Option gesetzt
+[[ -z "$OCR_IMAGES" && -n "$DEFAULT_OCR_IMAGES" ]] && OCR_IMAGES="$DEFAULT_OCR_IMAGES"
+[[ -z "$VINYL_CATALOG" && -n "$DEFAULT_CATALOG" ]] && VINYL_CATALOG="$DEFAULT_CATALOG"
+[[ -n "$OCR_CMD_ARG" ]] && export OCR_CMD="$OCR_CMD_ARG"
+
+# Positionale Argumente: Eingabe1 [Eingabe2] [Ausgabe]
+[[ $# -eq 0 ]] && echo "Fehler: Mindestens eine Eingabedatei angeben." >&2 && show_usage >&2 && exit 1
+INPUT1="$1"
 INPUT2=""
 OUT_DIR=""
-if [ -n "$2" ] && [ -f "$2" ]; then
-  INPUT2="$2"
-  OUT_DIR="${3:-}"
+shift
+if [[ $# -gt 0 && -f "$1" ]]; then
+  INPUT2="$1"
+  shift
+  OUT_DIR="${1:-}"
+  [[ $# -gt 0 ]] && shift
 else
-  OUT_DIR="${2:-}"
+  OUT_DIR="$1"
+  [[ $# -gt 0 ]] && shift
 fi
-if [ -z "$OUT_DIR" ]; then
+if [[ -z "$OUT_DIR" ]]; then
   OUT_DIR="$(dirname "$INPUT1")/$(basename "$INPUT1" | sed 's/\.[^.]*$//')_tracks"
-  [ -n "$INPUT2" ] && OUT_DIR="$(dirname "$INPUT1")/album_tracks"
+  [[ -n "$INPUT2" ]] && OUT_DIR="$(dirname "$INPUT1")/album_tracks"
 fi
 mkdir -p "$OUT_DIR"
-
-OCR_IMAGES="${VINYL_OCR_IMAGES:-}"
-USE_SPLEETER="${VINYL_USE_SPLEETER:-0}"
-VINYL_CATALOG="${VINYL_CATALOG:-}"
 
 # === Schritt 0: Metadaten zuerst (bei 2 Seiten nötig; bei 1 Seite optional, aber MusicBrainz als erster Versuch)
 # So wissen wir die Gesamt-Trackliste und ggf. tracks_per_medium (Seiten)
 get_metadata() {
-  if [ -n "$OCR_IMAGES" ] && { [ -n "${OCR_CMD}" ] || [ -n "${VINYL_OCR_CMD}" ] || [ -n "${OCR_URL}" ]; }; then
+  if [ -n "$OCR_IMAGES" ] && { [ -n "${OCR_CMD:-}" ] || [ -n "${VINYL_OCR_CMD:-}" ] || [ -n "${OCR_URL:-}" ]; }; then
     python3 "$SCRIPT_DIR/ocr_metadata.py" $OCR_IMAGES --json > "$OUT_DIR/metadata_ocr.json" 2>/dev/null || true
     [ -f "$OUT_DIR/metadata_ocr.json" ] && CATALOG=$(python3 -c "import json,sys; d=json.load(open(sys.argv[1])); c=d.get('catalog_numbers',[]); print(c[0] if c else '')" "$OUT_DIR/metadata_ocr.json" 2>/dev/null)
   fi
   [ -z "$CATALOG" ] && [ -n "$VINYL_CATALOG" ] && CATALOG="$VINYL_CATALOG"
-  if [ -n "$CATALOG" ] && [ "${VINYL_FETCH_MUSICBRAINZ:-1}" = "1" ]; then
+  if [ -n "$CATALOG" ] && [ "$FETCH_MUSICBRAINZ" = "1" ]; then
     echo "Katalognummer: $CATALOG – lade Metadaten von MusicBrainz (erster Versuch) …"
     if python3 "$SCRIPT_DIR/fetch_tracks_by_catalog.py" "$CATALOG" --json > "$OUT_DIR/metadata.json" 2>/dev/null; then
       echo "Metadaten von MusicBrainz übernommen."
@@ -56,7 +110,7 @@ if [ -n "$INPUT2" ] || [ -n "$OCR_IMAGES" ] || [ -n "$VINYL_CATALOG" ]; then
   echo "=== 0. Metadaten (OCR + MusicBrainz) ==="
   if ! get_metadata; then
     if [ -n "$INPUT2" ]; then
-      echo "Bei 2 Seiten werden Metadaten benötigt. Setze VINYL_OCR_IMAGES oder VINYL_CATALOG." >&2
+      echo "Bei 2 Seiten werden Metadaten benötigt. Option -c/--catalog oder -i/--images (mit --ocr-cmd) angeben." >&2
       exit 1
     fi
   fi
@@ -95,7 +149,7 @@ fi
 echo ""
 
 # === Schritt 2: Metadaten (falls noch nicht) + Umbenennen/Taggen ===
-if [ -z "$INPUT2" ] && [ -n "$OCR_IMAGES" ] && { [ -n "${OCR_CMD}" ] || [ -n "${VINYL_OCR_CMD}" ] || [ -n "${OCR_URL}" ]; }; then
+if [ -z "$INPUT2" ] && [ -n "$OCR_IMAGES" ] && { [ -n "${OCR_CMD:-}" ] || [ -n "${VINYL_OCR_CMD:-}" ] || [ -n "${OCR_URL:-}" ]; }; then
   if [ ! -f "$OUT_DIR/metadata.json" ]; then
     echo "=== 2. OCR + MusicBrainz ==="
     get_metadata || true

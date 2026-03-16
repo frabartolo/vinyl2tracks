@@ -69,31 +69,41 @@ python3 ocr_metadata.py cover.jpg --json > metadata.json
 
 ### Komplette Pipeline
 
+Alle Parameter werden als **Kommandozeilen-Optionen** übergeben (Umgebungsvariablen optional als Fallback):
+
 ```bash
 # Eine Seite
 ./run_pipeline.sh /pfad/zu/seite_a.mp3 [ausgabe_ordner]
 
-# Beide Seiten → ein Verzeichnis (01 … 20). Metadaten zuerst (MusicBrainz als erster Versuch).
-VINYL_OCR_IMAGES="cover.jpg label.jpg" OCR_CMD=/pfad/zu/ocr_wrapper.sh ./run_pipeline.sh seite_a.mp3 seite_b.mp3 ./ausgabe
-# Oder nur Katalognummer (ohne OCR):
-VINYL_CATALOG=63168 ./run_pipeline.sh "Louis Armstrong/20 GOLDEN HITS/Seite_1.MP3" "Louis Armstrong/20 GOLDEN HITS/Seite_2.MP3" "./Louis Armstrong/20 GOLDEN HITS/Ausgabe"
+# Beide Seiten → ein Verzeichnis, mit Katalognummer (MusicBrainz als erster Versuch)
+./run_pipeline.sh -c 63168 seite_a.mp3 seite_b.mp3 ./ausgabe
 
-# Optional Spleeter
-VINYL_USE_SPLEETER=1 ./run_pipeline.sh seite_a.mp3
+# Mit OCR-Bildern (Cover/Label) und optional OCR-Befehl
+./run_pipeline.sh -i cover.jpg label.jpg --ocr-cmd /pfad/zu/ocr.sh seite_a.mp3 seite_b.mp3 ./ausgabe
+
+# Katalognummer + Spleeter nach dem Split
+./run_pipeline.sh -c 63168 --spleeter seite_a.mp3 seite_b.mp3 ./ausgabe
+
+# Hilfe zu allen Optionen
+./run_pipeline.sh --help
 ```
 
-Die Pipeline lädt bei vorhandener Katalognummer (aus OCR oder `VINYL_CATALOG`) **zuerst** die Metadaten von MusicBrainz (Album, Künstler, alle Tracktitel, Jahr, Label, Katalognummer, ggf. Tracks pro Seite). Anschließend werden beide Seiten in ein gemeinsames Verzeichnis geschnitten und alle Infos in die MP3-Tags übernommen.
+**Optionen:** `-i, --images` (Bilder für OCR), `-c, --catalog` (Katalognummer), `--ocr-cmd` (OCR-Befehl), `--spleeter`, `--no-musicbrainz`, `-h, --help`.
 
-## Konfiguration (Umgebung)
+Die Pipeline lädt bei angegebener Katalognummer (**-c**) **zuerst** die Metadaten von MusicBrainz. Anschließend werden beide Seiten in ein gemeinsames Verzeichnis geschnitten und alle Infos in die MP3-Tags übernommen.
+
+## Konfiguration
+
+**Kommandozeile (empfohlen):** Siehe `./run_pipeline.sh --help`. Optionen: `-i/--images`, `-c/--catalog`, `--ocr-cmd`, `--spleeter`, `--no-musicbrainz`.
+
+**Umgebungsvariablen (optionaler Fallback):**
 
 | Variable | Bedeutung |
 |----------|-----------|
-| `OCR_CMD` / `VINYL_OCR_CMD` | Befehl für OCR; erhält Bildpfad als 1. Argument, liefert Text auf stdout |
+| `OCR_CMD` / `VINYL_OCR_CMD` | OCR-Befehl (sonst per `--ocr-cmd`) |
 | `OCR_URL` / `VINYL_OCR_URL` | URL für OCR-API; POST mit Bild-Body |
-| `VINYL_OCR_IMAGES` | Leerzeichen-getrennte Liste von Bildern für die Pipeline (Cover/Label) |
-| `VINYL_CATALOG` | Katalognummer (z.B. 63168), wenn ohne OCR; für 2-Seiten-Modus nötig, falls keine Bilder |
-| `VINYL_FETCH_MUSICBRAINZ` | `1` (default) = bei Katalognummer Metadaten von MusicBrainz laden (erster Versuch); `0` = nur OCR |
-| `VINYL_USE_SPLEETER` | `1` = nach dem Split Spleeter 2stems pro Track ausführen |
+| `VINYL_OCR_IMAGES` | Bilder für OCR (sonst per `-i/--images`) |
+| `VINYL_CATALOG` | Katalognummer (sonst per `-c/--catalog`) |
 | `OPENCLAW_HOST` | Hostname für Beispiel-Wrapper (z.B. `openclaw`) |
 | `REMOTE_OCR_CMD` | OCR-Befehl auf OpenClaw im Beispiel-Wrapper |
 

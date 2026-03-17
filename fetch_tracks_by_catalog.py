@@ -53,20 +53,65 @@ def get_release_with_tracks(release_id: str) -> Optional[Dict[str, Any]]:
     return data
 
 
+def _position_key(med: Dict[str, Any]) -> int:
+    """Sortierkey für Medium: 1=A, 2=B, … (Position kann int 1,2 oder str 'A','B' sein)."""
+    p = med.get("position")
+    if p is None:
+        return 0
+    if isinstance(p, int):
+        return p
+    s = str(p).strip().upper()
+    if s == "A":
+        return 1
+    if s == "B":
+        return 2
+    if len(s) == 1 and "C" <= s <= "Z":
+        return ord(s) - ord("C") + 3
+    try:
+        return int(p)
+    except (TypeError, ValueError):
+        return 0
+
+
 def _sorted_media(release: Dict[str, Any]) -> List[Dict[str, Any]]:
     """Medien nach Position sortieren (1=Seite A, 2=Seite B, …), damit A vor B kommt."""
     media_list = release.get("media") or []
+    return sorted(media_list, key=_position_key)
 
-    def position_key(med: Dict[str, Any]) -> int:
-        p = med.get("position")
-        if p is None:
-            return 0
-        try:
-            return int(p)
-        except (TypeError, ValueError):
-            return 0
 
-    return sorted(media_list, key=position_key)
+def _tracks_per_medium_from_track_numbers(media_list: List[Dict[str, Any]]) -> Optional[List[int]]:
+    """
+    Wenn nur ein Medium existiert, aber Track-Nummern wie A1, A2, B1, B2 haben:
+    Zähle Tracks pro Buchstabe (A, B, C …) in Reihenfolge → [7, 6] für A1–A7, B1–B6.
+    """
+    if len(media_list) != 1:
+        return None
+    tracks = media_list[0].get("tracks") or media_list[0].get("track") or []
+    if len(tracks) < 2:
+        return None
+    prefixes: List[str] = []
+    for tr in tracks:
+        num = tr.get("number") or ""
+        num_str = str(num).strip().upper()
+        if not num_str or not num_str[0].isalpha():
+            return None
+        prefixes.append(num_str[0])
+    if not prefixes:
+        return None
+    counts: List[int] = []
+    current_prefix: Optional[str] = None
+    current_count = 0
+    for p in prefixes:
+        if p == current_prefix:
+            current_count += 1
+        else:
+            if current_prefix is not None:
+                counts.append(current_count)
+            current_prefix = p
+            current_count = 1
+    if current_prefix is not None:
+        counts.append(current_count)
+    return counts if len(counts) >= 2 else None
 
 
 def extract_tracklist(release: Dict[str, Any]) -> List[str]:
@@ -137,13 +182,17 @@ def fetch_metadata_by_catalog(
             catno_from_mb = (li.get("catalog-number") or "").strip()
             if label_name or catno_from_mb:
                 break
-    # Tracks pro Medium (Seite), sortiert nach Position (A=1, B=2) → [7, 6] = 7 auf A, 6 auf B
+    # Tracks pro Medium (Seite): entweder aus mehreren Medien (Position 1,2/A,B) oder aus Track-Nummern A1,B1,…
     media_list = _sorted_media(release)
     tracks_per_medium = []
-    for med in media_list:
-        tks = med.get("tracks") or med.get("track") or []
-        tracks_per_medium.append(len(tks))
-    # Fallback: nur ein Medium oder keine Aufteilung → Pipeline teilt in der Mitte (TOTAL/2)
+    from_track_nums = _tracks_per_medium_from_track_numbers(media_list)
+    if from_track_nums is not None:
+        # Ein Medium, aber Nummern wie A1–A7, B1–B6 → [7, 6]
+        tracks_per_medium = from_track_nums
+    else:
+        for med in media_list:
+            tks = med.get("tracks") or med.get("track") or []
+            tracks_per_medium.append(len(tks))
     if not tracks_per_medium and tracks:
         tracks_per_medium = [len(tracks)]
     return {

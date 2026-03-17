@@ -200,6 +200,7 @@ if [ -n "$INPUT2" ]; then
     N1=$(echo "$PER_MEDIUM" | awk '{print $1}')
     N2=$(echo "$PER_MEDIUM" | awk '{print $2}')
   fi
+  # Fallback: nur ein Medium (kein A/B) oder keine Aufteilung → in der Mitte teilen
   if [ -z "$N1" ] || [ -z "$N2" ]; then
     N1=$((TOTAL / 2))
     N2=$((TOTAL - N1))

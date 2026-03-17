@@ -165,6 +165,8 @@ python3 rename_tracks.py ./ausgabe --meta metadata.json
 
 In der Pipeline: Nach dem OCR wird automatisch die erste erkannte Katalognummer für den MusicBrainz-Abruf genutzt; die geladene Trackliste ersetzt dann die aus dem OCR. So erhältst du exakte Titel und Künstler.
 
+**Seite A / B:** Die Tracks pro Seite (z. B. 7 auf A, 6 auf B) kommen aus den MusicBrainz-Medien, sortiert nach **Position** (1 = Seite A, 2 = Seite B). So wird die richtige Anzahl Schnitte pro Aufnahme-Datei verwendet. Enthält das Release nur ein Medium (keine A/B-Aufteilung), teilt die Pipeline in der Mitte: erste Hälfte der Tracks = Seite 1, zweite Hälfte = Seite 2.
+
 ## Dateien
 
 | Datei | Beschreibung |

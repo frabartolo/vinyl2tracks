@@ -53,10 +53,26 @@ def get_release_with_tracks(release_id: str) -> Optional[Dict[str, Any]]:
     return data
 
 
-def extract_tracklist(release: Dict[str, Any]) -> List[str]:
-    """Aus Release-JSON die Tracktitel in Reihenfolge extrahieren."""
-    tracks: List[str] = []
+def _sorted_media(release: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Medien nach Position sortieren (1=Seite A, 2=Seite B, …), damit A vor B kommt."""
     media_list = release.get("media") or []
+
+    def position_key(med: Dict[str, Any]) -> int:
+        p = med.get("position")
+        if p is None:
+            return 0
+        try:
+            return int(p)
+        except (TypeError, ValueError):
+            return 0
+
+    return sorted(media_list, key=position_key)
+
+
+def extract_tracklist(release: Dict[str, Any]) -> List[str]:
+    """Aus Release-JSON die Tracktitel in Reihenfolge extrahieren (Medien nach Position sortiert)."""
+    tracks: List[str] = []
+    media_list = _sorted_media(release)
     for medium in media_list:
         # API liefert "tracks" (nicht "track")
         for track in medium.get("tracks") or medium.get("track") or []:
@@ -90,9 +106,9 @@ def fetch_metadata_by_catalog(
     if not release:
         return None
     tracks = extract_tracklist(release)
-    if not tracks and (release.get("media") or []):
+    if not tracks:
         # Fallback: recording title aus track
-        for medium in release.get("media") or []:
+        for medium in _sorted_media(release):
             for track in medium.get("tracks") or medium.get("track") or []:
                 rec = track.get("recording")
                 if rec and rec.get("title"):
@@ -121,12 +137,13 @@ def fetch_metadata_by_catalog(
             catno_from_mb = (li.get("catalog-number") or "").strip()
             if label_name or catno_from_mb:
                 break
-    # Tracks pro Medium (Seite), z.B. [10, 10] bei 2 Seiten
-    media_list = release.get("media") or []
+    # Tracks pro Medium (Seite), sortiert nach Position (A=1, B=2) → [7, 6] = 7 auf A, 6 auf B
+    media_list = _sorted_media(release)
     tracks_per_medium = []
     for med in media_list:
         tks = med.get("tracks") or med.get("track") or []
         tracks_per_medium.append(len(tks))
+    # Fallback: nur ein Medium oder keine Aufteilung → Pipeline teilt in der Mitte (TOTAL/2)
     if not tracks_per_medium and tracks:
         tracks_per_medium = [len(tracks)]
     return {
